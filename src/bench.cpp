@@ -8,7 +8,9 @@
 #include <sys/resource.h>
 
 #include <cstdio>
+#include <algorithm>
 #include <fstream>
+#include <limits>
 #include <iostream>
 #include <map>
 #include <set>
@@ -360,6 +362,14 @@ int main(int argc, char** argv) {
     if (!cfg.series.empty()) open_csv(cfg.series, kSeriesHeader);
 
     std::vector<Key> keys = load_dataset(cfg.dataset, cfg.n, cfg.spec.seed);
+    // ALEX (ours and the reference) reserves UINT64_MAX as its gap sentinel.
+    // SOSD's fb dataset contains it once; drop it for every index so all of
+    // them index exactly the same keys.
+    const size_t before = keys.size();
+    keys.erase(std::remove(keys.begin(), keys.end(), std::numeric_limits<Key>::max()), keys.end());
+    if (keys.size() != before)
+      std::fprintf(stderr, "note: dropped %zu key(s) equal to UINT64_MAX (reserved by ALEX)\n",
+                   before - keys.size());
     Workload w = generate_workload(keys, std::min(cfg.init, keys.size()), cfg.spec);
     keys.clear();
     keys.shrink_to_fit();

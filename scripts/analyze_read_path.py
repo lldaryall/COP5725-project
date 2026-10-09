@@ -37,7 +37,7 @@ def main(path):
         ai, bi, ri = (med(x, "index_bytes") for x in (alex, bt, best))
         print(f"{d:22}{n:>10}  {a:7.2f}{b:8.2f}{r:7.2f}{m}  {a / b:7.2f}x{a / r:8.2f}x"
               f"  {bi / ai:15.1f}x{ri / ai:16.1f}x  {best_lbl[4:]}")
-    print("\nmap = std::map (skipped at 50M keys for memory).")
+    print("\nmap = std::map (not run at the largest sizes, for memory).")
     print("RMI* = best of the swept second-stage model counts (the paper tuned RMI per dataset).")
     print("Index size counts navigation structure only (B+ tree inner nodes, RMI models,")
     print("ALEX model nodes + data node metadata), matching the paper's definition.")

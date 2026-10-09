@@ -16,6 +16,9 @@ on:
       rmi_models:
         description: RMI second-stage model counts to sweep
         default: "262144 1048576 4194304 16777216"
+      datasets:
+        description: JSON list of datasets
+        default: '["books","fb","osm","wiki","lognormal","uniform","normal"]'
       experiments:
         description: Which experiments to run
         type: choice
@@ -36,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        dataset: [books, fb, osm, wiki, lognormal, uniform, normal]
+        dataset: ${{ fromJSON(inputs.datasets) }}
     env:
       REAL: ${{ contains(fromJSON('["books","fb","osm","wiki"]'), matrix.dataset) }}
     steps:

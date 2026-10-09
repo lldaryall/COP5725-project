@@ -12,7 +12,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 make -s reference
 OUT=$(mktemp)
-trap 'rm -f "$OUT"' EXIT
+LOG=$(mktemp)
+trap 'rm -f "$OUT" "$LOG"' EXIT
+# Any failed run aborts with its error message (set -e), never silently.
+bench_ref() {
+  ./build/bench_ref "$@" >> "$LOG" 2>&1 || { echo "FAILED: bench_ref $*" >&2; { grep "^error:" "$LOG" | tail -1 || tail -3 "$LOG"; } >&2; exit 1; }
+}
 
 # DATASETS overrides the list, e.g. DATASETS="data/fb_200M_uint64".
 if [[ -n ${DATASETS:-} ]]; then
@@ -30,10 +35,9 @@ for ds in "${datasets[@]}"; do
       for rep in 1 2 3; do
         run=(--dataset "$ds" --n "$n" --init "$n" --ops 1000000 --mix readonly
              --alex-max-node-bytes "$nb" --seed "$rep" --csv "$OUT")
-        ./build/bench_ref --index alexref "${run[@]}" --label "$(basename "$ds")|$n|$nb|$rep|ref" 2>/dev/null
-        ./build/bench_ref --index alex --alex-ref-fit 1 "${run[@]}" \
-          --label "$(basename "$ds")|$n|$nb|$rep|exact" 2>/dev/null
-        ./build/bench_ref --index alex "${run[@]}" --label "$(basename "$ds")|$n|$nb|$rep|default" 2>/dev/null
+        bench_ref --index alexref "${run[@]}" --label "$(basename "$ds")|$n|$nb|$rep|ref"
+        bench_ref --index alex --alex-ref-fit 1 "${run[@]}" --label "$(basename "$ds")|$n|$nb|$rep|exact"
+        bench_ref --index alex "${run[@]}" --label "$(basename "$ds")|$n|$nb|$rep|default"
       done
     done
   done

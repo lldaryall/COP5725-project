@@ -25,6 +25,18 @@ else
   for f in data/*_uint32 data/*_uint64; do [[ -f $f ]] && datasets+=("$f"); done
 fi
 
+LOG=${OUT%.csv}.log
+FAILED=0
+# Runs one benchmark; on failure prints its error and carries on, so one bad
+# configuration does not lose the rest of a long sweep.
+bench() {
+  if ! ./build/bench "$@" >> "$LOG" 2>&1; then
+    echo "FAILED: ./build/bench $*" >&2
+    { grep "^error:" "$LOG" | tail -1 || tail -3 "$LOG"; } >&2
+    FAILED=1
+  fi
+}
+
 make -s build/bench
 for ds in "${datasets[@]}"; do
   for n in $SIZES; do
@@ -36,13 +48,14 @@ for ds in "${datasets[@]}"; do
       fi
       common+=(--ops "$OPS" --mix readonly --seed "$seed" --csv "$OUT")
       for idx in $INDEXES; do
-        ./build/bench --index "$idx" "${common[@]}" --label "$idx" 2>/dev/null
+        bench --index "$idx" "${common[@]}" --label "$idx"
       done
       for m in $RMI_MODELS; do
         [[ $n == all ]] || (( m * 2 <= n )) || continue
-        ./build/bench --index rmi --rmi-models "$m" "${common[@]}" --label "rmi_$m" 2>/dev/null
+        bench --index rmi --rmi-models "$m" "${common[@]}" --label "rmi_$m"
       done
     done
   done
 done
-echo "results appended to $OUT"
+echo "results appended to $OUT (log: $LOG)"
+exit $FAILED
