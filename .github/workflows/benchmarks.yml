@@ -1,0 +1,111 @@
+# Full-scale read-only experiments on real SOSD datasets (and 200M-key
+# synthetic ones), one 16 GB runner per dataset. Run from the Actions tab or:
+#   gh workflow run benchmarks.yml
+# Results are uploaded as artifacts; the summary job merges them.
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      seeds:
+        description: Seeds per configuration
+        default: "1 2 3"
+      ops:
+        description: Lookups per run
+        default: "10000000"
+      rmi_models:
+        description: RMI second-stage model counts to sweep
+        default: "262144 1048576 4194304 16777216"
+
+jobs:
+  read-path:
+    name: read-only, ${{ matrix.dataset }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        dataset: [books, fb, osm, wiki, lognormal, uniform, normal]
+    env:
+      REAL: ${{ contains(fromJSON('["books","fb","osm","wiki"]'), matrix.dataset) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Machine
+        run: |
+          mkdir -p out
+          { uname -a; lscpu; free -g; df -h .; g++ --version | head -1; } \
+            | tee "out/machine-${{ matrix.dataset }}.txt"
+
+      - name: Allow perf counters
+        run: sudo sysctl -w kernel.perf_event_paranoid=-1 || true
+
+      - name: Cache dataset
+        if: env.REAL == 'true'
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: sosd-${{ matrix.dataset }}-200M-uint64-v1
+
+      - name: Download dataset
+        if: env.REAL == 'true'
+        run: scripts/download_sosd.sh ${{ matrix.dataset }}
+
+      - name: Build
+        run: make -j4 NATIVE=1 build/bench
+
+      - name: Read-only comparison (ALEX, B+ tree, RMI sweep)
+        run: |
+          if [[ $REAL == true ]]; then
+            ds=$(ls data/*_uint64 | head -1); sizes=all   # every unique key
+          else
+            ds=synthetic:${{ matrix.dataset }}; sizes=200000000
+          fi
+          DATASETS="$ds" SIZES="$sizes" INDEXES="alex btree" \
+          RMI_MODELS="${{ inputs.rmi_models }}" SEEDS="${{ inputs.seeds }}" \
+          OPS="${{ inputs.ops }}" OUT="out/read_path-${{ matrix.dataset }}.csv" \
+            scripts/run_read_path.sh
+
+      - name: Validate ALEX against the reference on this dataset
+        if: env.REAL == 'true'
+        run: |
+          scripts/fetch_alex_reference.sh
+          DATASETS="$(ls data/*_uint64 | head -1)" SIZES="1000000 10000000" \
+          NODE_BYTES="16777216" scripts/validate_alex.sh \
+            | tee "out/validate-${{ matrix.dataset }}.txt"
+
+      - name: Summary
+        if: always()
+        run: |
+          f="out/read_path-${{ matrix.dataset }}.csv"
+          [[ -f $f ]] && { echo '```'; python3 scripts/analyze_read_path.py "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results-${{ matrix.dataset }}
+          path: out/
+
+  summary:
+    name: merged summary
+    needs: read-path
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Merge CSVs
+        run: |
+          mkdir -p merged
+          files=(artifacts/*/read_path-*.csv)
+          head -1 "${files[0]}" > merged/read_path_full.csv
+          for f in "${files[@]}"; do tail -n +2 "$f" >> merged/read_path_full.csv; done
+          cp artifacts/*/machine-*.txt artifacts/*/validate-*.txt merged/ 2>/dev/null || true
+          { echo '```'; python3 scripts/analyze_read_path.py merged/read_path_full.csv; echo '```'; } \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: results-merged
+          path: merged/

@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.cxx }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        cxx: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build (warnings are errors)
+        run: make -j4 CXX=${{ matrix.cxx }} CXXFLAGS="-O3 -DNDEBUG -Werror"
+      - name: Tests
+        run: ./build/tests
+      - name: Tests under ASan + UBSan
+        run: make CXX=${{ matrix.cxx }} check
+
+  cmake:
+    name: CMake
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build -j4
+      - run: ctest --test-dir build --output-on-failure
+
+  macos:
+    name: macOS arm64
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: make -j3 CXXFLAGS="-O3 -DNDEBUG -Werror"
+      - run: ./build/tests
+
+  validate-alex:
+    name: ALEX vs. reference implementation (x86, native)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch the authors' ALEX
+        run: scripts/fetch_alex_reference.sh
+      - name: Structure must match exactly
+        run: SIZES="100000 1000000" scripts/validate_alex.sh | tee -a "$GITHUB_STEP_SUMMARY"

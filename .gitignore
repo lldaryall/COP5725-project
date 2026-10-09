@@ -1,0 +1,6 @@
+build/
+data/*
+!data/.gitkeep
+.DS_Store
+*.o
+third_party/ALEX/
