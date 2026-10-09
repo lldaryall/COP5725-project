@@ -56,6 +56,7 @@ const char* kUsage = R"(usage: bench [options]
   --alex-insert-frac F  ALEX cost model expected insert fraction [1]
   --alex-max-node-bytes N  ALEX max node size                   [16777216]
   --ref-approx 0|1      alexref: sampled model fitting           [0]
+  --alex-ref-fit 0|1    alex: fit models exactly like the reference [0]
 )";
 
 class Args {
@@ -322,6 +323,7 @@ Config parse(const Args& a) {
   c.index_options.alex.max_node_bytes =
       static_cast<size_t>(a.num("alex-max-node-bytes", double(size_t(1) << 24)));
   c.index_options.ref_approximate = a.num("ref-approx", 0) != 0;
+  c.index_options.alex.reference_model_fit = a.num("alex-ref-fit", 0) != 0;
 
   WorkloadSpec& s = c.spec;
   s.num_ops = static_cast<size_t>(a.num("ops", 1'000'000));

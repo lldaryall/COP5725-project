@@ -9,6 +9,7 @@
 #endif
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include "datasets.h"
 
@@ -90,6 +91,49 @@ LinearModel fit_linear(size_t n, GetKey key_at, double y_offset = 0.0) {
   m.a = static_cast<double>(slope);
   // y = slope * (x - x0 - x_mean) + y_mean, rewritten as a * x + b.
   m.b = static_cast<double>(y_mean - slope * (static_cast<long double>(x0) + x_mean)) + y_offset;
+  return m;
+}
+
+// The reference implementation's LinearModelBuilder (alex_base.h), reproduced
+// exactly: raw sums in long double, and a min/max spline when floating-point
+// error makes the slope non-positive. Used only for validation
+// (alex::Params::reference_model_fit), since fit_linear is more precise.
+template <class GetKey>
+LinearModel fit_linear_reference(size_t n, GetKey key_at) {
+  LinearModel m;
+  long double x_sum = 0, y_sum = 0, xx_sum = 0, xy_sum = 0;
+  Key x_min = std::numeric_limits<Key>::max(), x_max = 0;
+  for (size_t i = 0; i < n; ++i) {
+    const Key x = key_at(i);
+    const int y = static_cast<int>(i);
+    x_sum += static_cast<long double>(x);
+    y_sum += static_cast<long double>(y);
+    xx_sum += static_cast<long double>(x) * x;
+    xy_sum += static_cast<long double>(x) * y;
+    x_min = std::min(x, x_min);
+    x_max = std::max(x, x_max);
+  }
+  const long double count = static_cast<long double>(n);
+  if (n <= 1) {
+    m.b = static_cast<double>(y_sum);
+    return m;
+  }
+  if (count * xx_sum - x_sum * x_sum == 0) {
+    m.b = static_cast<double>(y_sum / count);
+    return m;
+  }
+  m.a = static_cast<double>((count * xy_sum - x_sum * y_sum) / (count * xx_sum - x_sum * x_sum));
+  m.b = static_cast<double>((y_sum - static_cast<long double>(m.a) * x_sum) / count);
+  if (m.a <= 0) {
+    const double y_min = 0, y_max = static_cast<double>(n - 1);
+    if (x_max - x_min == 0) {
+      m.a = 0;
+      m.b = static_cast<double>(y_sum / count);
+    } else {
+      m.a = (y_max - y_min) / (static_cast<double>(x_max) - static_cast<double>(x_min));
+      m.b = -static_cast<double>(x_min) * m.a;
+    }
+  }
   return m;
 }
 

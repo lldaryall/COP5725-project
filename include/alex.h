@@ -59,7 +59,17 @@ struct Params {
   // smaller struct would tilt the cost model towards many more, smaller data
   // nodes than ALEX builds. Memory accounting still uses our real sizes.
   double data_node_cost_bytes = 208;
+  // Fit data node models exactly as the reference does (raw long double
+  // sums) instead of our more precise offset fit. Only for validation: it
+  // makes structure comparisons bit-exact.
+  bool reference_model_fit = false;
 };
+
+// Least-squares data node model for keys v[0..n), positions 0..n-1.
+inline LinearModel fit_data_model(const Value* v, int n, const Params& p) {
+  auto key_at = [&](size_t i) { return v[i].first; };
+  return p.reference_model_fit ? fit_linear_reference(n, key_at) : fit_linear(n, key_at);
+}
 
 struct Node {
   explicit Node(bool leaf, int lvl) : is_leaf(leaf), level(lvl) {}
@@ -256,7 +266,7 @@ inline double compute_level(const Value* v, int n, const LinearModel& node_model
     }
     FTNode t{level, i, 0, left, right, false, {}, {}, right - left};
     if (right > left) {
-      t.model = fit_linear(right - left, [&](size_t j) { return v[left + j].first; });
+      t.model = fit_data_model(v + left, right - left, p);
       t.cost = expected_cost(v + left, right - left, kInitDensity, p.expected_insert_frac,
                              t.model, &t.stats);
       // Too big for one data node: account for the extra level it will need.
@@ -369,7 +379,7 @@ class Alex {
       root_range.a = 1.0 / (static_cast<double>(v[n - 1].first) - static_cast<double>(v[0].first));
       root_range.b = -static_cast<double>(v[0].first) * root_range.a;
     }
-    LinearModel data_model = fit_linear(n, [&](size_t i) { return v[i].first; });
+    LinearModel data_model = fit_data_model(v, n, params_);
     DataNodeStats stats;
     double cost = expected_cost(v, n, kInitDensity, params_.expected_insert_frac, data_model, &stats);
     root_ = build(v, n, root_range, cost, data_model, stats, 0);
