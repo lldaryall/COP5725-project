@@ -40,7 +40,9 @@ build/tests: tests/test_main.cpp $(HEADERS) $(TLX_OBJ) | build
 
 # The reference ALEX needs x86 intrinsics. Everything in bench_ref is built
 # for the same architecture so the comparison stays like-for-like.
-REF_ARCH := $(if $(filter arm64,$(shell uname -m)),-arch x86_64 -mpopcnt,$(if $(filter x86_64,$(shell uname -m)),-mpopcnt,))
+# It uses POPCNT, LZCNT and BMI1 instructions (every x86-64 CPU since ~2013).
+REF_X86 := -mpopcnt -mlzcnt -mbmi
+REF_ARCH := $(if $(filter arm64,$(shell uname -m)),-arch x86_64 $(REF_X86),$(if $(filter x86_64,$(shell uname -m)),$(REF_X86),))
 REF_FLAGS = $(filter-out -mcpu=native -march=native,$(FLAGS)) $(REF_ARCH) \
              -Ithird_party -DCOP5725_ALEX_REF -Wno-unused-parameter -Wno-sign-compare \
              -Wno-unused-variable -Wno-unused-but-set-variable -Wno-deprecated-declarations -Wno-logical-op-parentheses

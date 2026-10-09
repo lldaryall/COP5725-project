@@ -16,6 +16,17 @@ on:
       rmi_models:
         description: RMI second-stage model counts to sweep
         default: "262144 1048576 4194304 16777216"
+      experiments:
+        description: Which experiments to run
+        type: choice
+        options: [all, read-path, validate]
+        default: all
+
+# GitHub runs `shell: bash` steps with -eo pipefail, so a failure anywhere in a
+# pipeline (e.g. `script | tee`) fails the step. The implicit default does not.
+defaults:
+  run:
+    shell: bash
 
 jobs:
   read-path:
@@ -55,6 +66,7 @@ jobs:
         run: make -j4 NATIVE=1 build/bench
 
       - name: Read-only comparison (ALEX, B+ tree, RMI sweep)
+        if: inputs.experiments != 'validate'
         run: |
           if [[ $REAL == true ]]; then
             ds=$(ls data/*_uint64 | head -1); sizes=all   # every unique key
@@ -67,7 +79,7 @@ jobs:
             scripts/run_read_path.sh
 
       - name: Validate ALEX against the reference on this dataset
-        if: env.REAL == 'true'
+        if: env.REAL == 'true' && inputs.experiments != 'read-path'
         run: |
           scripts/fetch_alex_reference.sh
           DATASETS="$(ls data/*_uint64 | head -1)" SIZES="1000000 10000000" \
@@ -78,7 +90,12 @@ jobs:
         if: always()
         run: |
           f="out/read_path-${{ matrix.dataset }}.csv"
-          [[ -f $f ]] && { echo '```'; python3 scripts/analyze_read_path.py "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f $f ]]; then
+            { echo '```'; python3 scripts/analyze_read_path.py "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          for v in out/validate-*.txt; do
+            [[ -f $v ]] && { echo '```'; cat "$v"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          done
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -99,12 +116,18 @@ jobs:
       - name: Merge CSVs
         run: |
           mkdir -p merged
+          shopt -s nullglob
+          cp artifacts/*/machine-*.txt artifacts/*/validate-*.txt merged/ || true
           files=(artifacts/*/read_path-*.csv)
-          head -1 "${files[0]}" > merged/read_path_full.csv
-          for f in "${files[@]}"; do tail -n +2 "$f" >> merged/read_path_full.csv; done
-          cp artifacts/*/machine-*.txt artifacts/*/validate-*.txt merged/ 2>/dev/null || true
-          { echo '```'; python3 scripts/analyze_read_path.py merged/read_path_full.csv; echo '```'; } \
-            | tee -a "$GITHUB_STEP_SUMMARY"
+          if (( ${#files[@]} )); then
+            head -1 "${files[0]}" > merged/read_path_full.csv
+            for f in "${files[@]}"; do tail -n +2 "$f" >> merged/read_path_full.csv; done
+            { echo '```'; python3 scripts/analyze_read_path.py merged/read_path_full.csv; echo '```'; } \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          for v in merged/validate-*.txt; do
+            { echo "### $(basename "$v")"; echo '```'; cat "$v"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: results-merged

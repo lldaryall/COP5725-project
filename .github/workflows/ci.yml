@@ -5,6 +5,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# GitHub runs `shell: bash` steps with -eo pipefail, so a failure anywhere in a
+# pipeline (e.g. `script | tee`) fails the step. The implicit default does not.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   linux:
     name: Linux ${{ matrix.cxx }}
