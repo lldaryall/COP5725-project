@@ -16,7 +16,7 @@ gradual drift, and abrupt regime change.
 | Wk 1: literature review (RMI, ALEX, PGM, FITing-Tree, LIPP, SOSD, robustness studies) | done, see Literature Survey |
 | Wk 2: dataset loading, drift workload generators, perf counters, std::map and B+ tree baseline runs | done |
 | Wk 3–4: two-stage RMI baseline; ALEX bulk load and lookup | done; ALEX validated against the authors' code |
-| Wk 5–6: midpoint, read-path results vs. the paper | done, see [Midpoint results](#midpoint-results-read-only) |
+| Wk 5–6: midpoint, read-path results vs. the paper | done: [laptop midpoint](#midpoint-results-read-only), [full scale on real data](#full-scale-results-real-datasets-200m-keys) |
 | Wk 7–8: Gapped Array inserts, node expansion and splits, cost models | next (cost model already in place) |
 | Wk 9–10: hot-range, drift, and regime runs with adaptation tracking; ablation with adaptation off | |
 
@@ -250,6 +250,70 @@ survey:
 - SOSD datasets are picked up automatically once downloaded
   (`scripts/download_sosd.sh`). They need more RAM than this 8 GB laptop
   comfortably has at full size.
+
+## Full-scale results (real datasets, 200M keys)
+
+These are the paper-scale runs from the **Benchmarks** workflow on GitHub's x86
+Linux runners: all four SOSD datasets with every unique key bulk loaded, plus
+200M-key synthetic sets. Each index serves 10M Zipfian lookups, and throughput
+is the median of 3 seeds. All 126 runs verified every key with 0 errors, and
+peak memory was 7.8 GB per process. Raw data is in `results/full_scale/`, as
+`read_path.csv` plus per-job `machine-*.txt` and `validate-*.txt` files.
+
+```
+dataset                     keys     ALEX  B+tree   RMI*    map   ALEX/B+ ALEX/RMI   B+ idx/ALEX idx RMI idx/ALEX idx  RMI* models
+----------------------------------------------------------------------------------------------------------------------------------
+books_200M_uint64      200000000     7.45    1.72   5.99      -     4.34x    1.24x           1441.5x          2731.4x  16777216
+fb_200M_uint64         199999999     2.41    1.96   1.76      -     1.23x    1.37x              7.2x             0.2x  262144
+osm_cellids_200M_uint64 200000000     2.47    1.63   4.38      -     1.52x    0.56x              4.9x             9.3x  16777216
+synthetic:lognormal    200000000     9.27    1.82   7.47      -     5.09x    1.24x             12.6x            23.8x  16777216
+synthetic:normal       200000000    10.02    1.76   6.93      -     5.70x    1.45x           1850.8x          3506.9x  16777216
+synthetic:uniform      200000000    12.46    2.07   9.81      -     6.01x    1.27x           2523.0x          4780.7x  16777216
+wiki_ts_200M_uint64     90437011    11.02    1.77   7.85      -     6.24x    1.40x             51.5x           215.7x  16777216
+```
+
+Each dataset ran on one runner, so its indexes are compared on the same CPU.
+GitHub assigned different AMD EPYC models across jobs, so absolute Mops/s are
+not comparable *between* datasets:
+
+| CPU | Datasets |
+|---|---|
+| AMD EPYC 7763 | lognormal, normal, osm |
+| AMD EPYC 9V45 | fb, uniform |
+| AMD EPYC 9V74 | books, wiki |
+
+**Against the paper's claims:**
+
+| Paper claim | Full scale |
+|---|---|
+| ALEX beats the B+ tree (up to 4.1×) and never loses | Reproduced, all 7 datasets: 1.23× (fb) to 6.24× (wiki). Above 4× on books, wiki and every synthetic set. |
+| Index up to ~2000× smaller than a B+ tree's | Reproduced: 1,441× (books), 1,851× (normal), 2,523× (uniform). Only 4.9–51× on the hard real datasets (osm, fb, wiki). |
+| Up to 2.2× faster than the Learned Index (RMI), with a smaller index | Mostly reproduced: ALEX is faster on 6 of 7 datasets (1.24–1.45×), and on 5 of those its index is 24–4,800× smaller. **Not on osm**: the tuned RMI is 1.8× faster there, though ALEX's index is still 9× smaller. On fb, ALEX is faster but its index is 5× larger. |
+
+**What the hard datasets show.** osm and fb are the datasets SOSD and the
+updatable-index studies flag as hard to learn. On osm, cell IDs have no smooth
+local structure. On fb, a few huge outlier IDs make linear models fit the bulk
+of the keys badly.
+
+On both, ALEX's margin over the B+ tree shrinks to 1.2–1.5×. It needs thousands
+of model nodes (osm: about 6,900 at 10M keys, against 1–31 on books and wiki)
+and loses its index-size advantage. That matches Wongkham et al.'s finding,
+summarized in the literature survey, that ALEX's throughput drops sharply from
+easy to hard data. It also motivates the drift extension: hard regions of the
+key space are where adaptation has to work.
+
+**Validation on real data.** In reference-exact mode, ALEX's structure matches
+the authors' implementation exactly on all four real datasets (1M and 10M keys,
+3 seeds), and lookup throughput is within about 5% of theirs. With our default,
+more precise model fit, structure is identical on books and fb. On wiki and osm
+it differs by up to 0.1% of nodes: tiny floating-point differences flip
+near-ties in the cost model on hard data.
+
+**Not measured here:**
+- **Hardware counters.** GitHub's hosted runners are VMs without access to the
+  CPU's performance counters, and Docker Desktop on Apple Silicon has none
+  either. Those columns stay empty, and they fill in on bare-metal Linux.
+- **The B+ tree baseline** uses tlx's default 256-byte nodes, so it is not tuned.
 
 ## Notes on the preliminary numbers in `results/`
 

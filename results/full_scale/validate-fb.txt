@@ -1,0 +1,6 @@
+dataset                         n    node B  model/data nodes: ref | exact-fit | default-fit  Mops ref   ours  exact
+fb_200M_uint64            1000000  16777216  1/2 | 1/2 | 1/2                                     22.12  22.49  yes
+fb_200M_uint64           10000000  16777216  895/64000 | 895/64000 | 895/64000                    6.60   6.32  yes
+
+default fit: structure identical to the reference in 6/6 runs
+exact fit: structure matches the reference in all cases

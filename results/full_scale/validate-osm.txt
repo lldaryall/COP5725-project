@@ -1,0 +1,6 @@
+dataset                         n    node B  model/data nodes: ref | exact-fit | default-fit  Mops ref   ours  exact
+osm_cellids_200M_uint64   1000000  16777216  2072/47003 | 2072/47003 | 2074/47024                10.52  10.89  yes
+osm_cellids_200M_uint64  10000000  16777216  6854/91057 | 6854/91057 | 6862/91109                 5.94   5.89  yes
+
+default fit: structure identical to the reference in 0/6 runs
+exact fit: structure matches the reference in all cases
