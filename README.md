@@ -4,6 +4,8 @@
 
 COP 5725 implementation-flavor project. Darya Pylypenko.
 
+**Picking this up?** Start with [HANDOVER.md](HANDOVER.md): setup, current state, next steps and gotchas.
+
 Reproduces Ding et al., *ALEX: An Updatable Adaptive Learned Index* (SIGMOD 2020),
 and extends it by measuring where ALEX's cost-model adaptation stops keeping up
 when the insert distribution shifts at a controlled rate: hot-range inserts,
